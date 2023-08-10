@@ -1,0 +1,8 @@
+While looking at various text editors, I came to a sudden realisation of the similarity between a 'text editor' and a 'chat client' in regards to the user interface. Seeking to reconcile this similarity, I created a text editor, then, using the same UI code, I implemented an IRC client. During the process of doing so, I also realised that browsers exist in this same rough vicinity.
+
+To use the text editor, you can provide a file to edit on the command-line, or input a file name into the input box. Bindings are 'what you expect', in that they are most similar to the default text-editing behaviour of Windows, and are otherwise the defaults of Tk.
+
+The program dispatches based on argv[0]. Install it in your $PATH, then create symlinks as desired. Currently, `editor` causes the program to act as a text editor, `reader` causes it to act as a read-only view of a file, and `irc` causes it to act as an IRC client. `reader` will be changed in future to be suitable to act as a pager.
+
+Other desired functionalities include search, tab-autocompletion in the input box (for files and irc buffers), some form of internet browser, and some form of terminal, to replace Xterm and prevent me from having to write an Xresources.
+

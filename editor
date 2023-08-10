@@ -1,0 +1,421 @@
+#!/usr/bin/env wish
+
+# Used for relevant 'status' metadata, such as whether the file is saved,
+# or which IRC channel you're using.
+# Be careful to ensure it doesn't grow too large,
+# as it will eat into the space of the input box.
+
+set stat empty
+
+set textconfig {
+    -font f -relief solid -bd 1
+    -highlightbackground white
+    -highlightcolor white
+    -padx 4 -pady 4
+    -undo true
+    -width 80
+}
+
+font create f -family Fixed -size 12
+
+# {*} splits words, meaning $textconfig is multiple arguments, 
+# not one large argument.
+
+text  .body  {*}$textconfig
+text  .input {*}$textconfig -height 1
+label .status -font f -textvariable stat -bg white -pady 5
+
+# This configuration means the 
+pack .body .status .input
+pack .status -side left
+pack .body -fill both -expand 1 
+pack .input -fill x
+. configure -bg white -bd 6
+
+# Global bindings.
+
+# Return is always bound to maintain our illusion of a single line input.
+bind .input <Return> break
+
+# There's a bad definition of 'wordstart' here, but not much we can do about it.
+# It simply looks backwards for the first space. 
+# This means it only deletes one space at a time, rather than going all the way
+# to the previous last non-whitespace (\S) character.
+# Alas.
+bind . <Control-BackSpace> {
+    %W delete {insert-1c wordstart} insert-1c
+}
+
+bind .  <Tab> {
+    %W insert insert {    }
+    break
+}
+
+# This editor merges C-k and C-x. It's more convenient that way.
+# There's no use for C-k when you have something selected.
+bind . <Control-k> {
+    if {[set sel [%W tag ranges sel]] ne ""} {
+        set text [%W get {*}$sel]
+        %W delete {*}$sel
+    } else {
+        set text [%W get insert {insert lineend}]
+        %W delete insert {insert lineend}
+    }
+    clipboard clear
+    clipboard append $text
+    break
+}
+
+# C-v doesn't delete the selection by default.
+# Why?
+bind . <Control-v> {
+    catch {%W delete {*}[%W tag range sel]}
+}
+
+# I like the Windows keybinds.
+bind . <Control-a> {
+    %W tag add sel 1.0 end
+    break
+}
+
+bind . <Control-z> {
+    catch {%W edit undo}
+}
+
+bind . <Control-Shift-z> {
+    catch {%W edit redo}
+}
+bind .body <Prior> {
+    .body see 1.0
+    .body mark set insert 1.0
+}
+
+bind .body <Next> {
+    .body see end
+    .body mark set insert end
+}
+
+# We bind these functions for convenience.
+# Otherwise, we'd rewrite them in every single definition.
+proc ic {} {.input get 0.0 end-1c}
+
+proc open-file {} {
+    set ::stat { - }
+    if {[file exists [ic]]} {
+        set f [open [ic] r]
+        .body delete 0.0 end
+        .body insert end-1c [read $f]
+        close $f
+    } else {
+        set ::stat {read error }
+    }
+}
+
+proc readonly {} {
+    bind .body <KeyPress> {
+        switch %K {
+            Up    -
+            Down  -
+            Left  -
+            Right {continue}
+        }
+        break
+    }
+    bind .body <Control-a> {
+        %W tag add sel 1.0 end
+        break
+    }
+    bind .body <Control-c> {
+        clipboard append [%W get sel.first sel.last]
+    } 
+}
+
+bindtags .body  {.body  . all Text}
+bindtags .input {.input . all Text}
+
+switch -glob $argv0 {
+    *editor {
+        focus .body
+        set stat { - }
+        bind . <<Modified>> {
+            if [%W edit modified] {
+                set stat { * }
+            } else { 
+                set stat { - } 
+            }
+        }
+     
+        bind . <Control-s> save-file
+        bind .input <Return> {
+            open-file
+            resetmodified
+            break
+
+        }
+        
+        # Tab alignment.
+        # It doesn't automatically lower a level,
+        # but it doesn't really matter, considering how hard a 'level' is to define 
+        # An attempt was made at it, regardless. This code is a mess.
+        bind .body <Return> {
+            .body insert insert "\n"
+            .body insert insert [string trim [
+                .body get {insert-1l linestart} [
+                    .body search -elide -regexp {(\S|\n)} {insert-1l linestart}
+                ]
+            ] "\n"]
+            break
+        }
+
+        proc resetmodified {} {
+            .input edit modified 0
+            .body  edit modified 0
+        }
+
+        proc save-file {} {
+            if {[catch {set f [open [ic] w]}]} {
+                set ::stat {write error}
+            } else {
+                # Using get adds a newline.
+                puts -nonewline $f [.body get 0.0 end]
+                close $f
+                resetmodified
+            }
+        }
+        if {$argc == 1} {
+            .input insert 0.0 [lindex $argv 0]
+            open-file
+            resetmodified
+        }
+
+    }
+    *reader {
+        readonly
+        focus .input
+        set stat reading
+        bind .input <Return> {
+            open-file
+            set stat reading
+            break
+        }
+            
+        if {$argc == 1} {
+            .input insert 0.0 [lindex $argv 0]
+            open-file
+            set stat reading
+        }
+    }
+    *irc {
+        # I don't want to write an argument parser.
+        # They're annoying, 
+        # especially when you have three programs dressed up as one.
+        # If you want a different username, change it yourself.
+        
+        readonly
+        
+        set i {}
+        set chan {}
+        set buffers [dict create]
+        
+        set self {machinestops}
+        set server {irc.libera.chat}
+        set chan {#tcl}
+        
+        
+        if {$argc > 0}  {set ::chan [lindex $argv 0]}
+        if {$argc == 2} {set server [lindex $argv 1]}
+        set ::i [socket -async $server  6667]
+        
+        set ::buffers [dict create]
+        
+        event add <<Reload>> <Control-Shift-r>
+        bind . <<Reload>> {iupdate}
+        # Refresh the current buffer
+        
+        bind .input <Return> {
+            # If we don't trim the string, a newline gets inserted due to `get`.
+            # Or our Return (shouldn't happen due to the break, but it did)
+            msgprocess [string trim [.input get 0.0 end]]
+            .input delete 1.0 end
+            break
+        }
+        proc iupdate {} {
+            set pos [lindex [.body yview] 1]
+            .body delete 1.0 end
+            .body insert end [join [dict get $::buffers $::chan] "\n"]
+            .body yview moveto $pos
+        }
+        
+        proc splitonfirst {str char} {
+            # thanks emiliano
+            set f [string first $char $str]
+            if {[string range $str 0 $f-1] eq {}} {
+                list [string range $str $f+1 end] [string range $str 0 $f-1]
+            } else {
+                list [string range $str 0 $f-1] [string range $str $f+1 end]
+            }
+        }
+
+        proc ijoin chan {
+            puts $::i "JOIN $chan"
+            dict set ::buffers $chan ""
+            set ::chan $chan
+            set ::stat $::chan
+            event generate . <<Reload>>
+        }
+
+        proc ipart {msg} {
+            puts $::i "PART $::chan :$msg"
+            set ::buffers [dict remove $::buffers $::chan]
+            set ::chan [lindex [dict keys $::buffers] 1]
+            set ::stat $::chan 
+        }
+        proc msgprocess msg {
+
+                lassign [splitonfirst $msg  " "] cmd rest
+                lassign [splitonfirst $rest " "] tar rest
+                
+                switch -glob $cmd {
+                    {*/msg}      {
+                        puts $::i "PRIVMSG $tar :$rest"
+                    }
+                    {*/chans}    {
+                        .body insert end "\n\[CHANNELS: [join [dict keys $::buffers]]\]"
+                    }
+                    {*/switch}   {
+                        set ::chan $tar
+                        set ::stat $::chan
+                        event generate . <<Reload>>
+                        .body see end
+                    }
+                    {*/me}       {
+                        puts $::i "PRIVMSG $::chan :\001ACTION $cmd $tar $rest\001"
+                        dict lappend ::buffers $::chan "* $::self $cmd $tar $rest"
+                    }
+                    {*/join}     {
+                        ijoin "$tar"
+                    }
+                    {*/part}     {
+                        if {$tar eq ""} {set tar "bye bye"}
+                        ipart $tar
+                    }
+                    {*/nick}     {
+                        if {$tar ne ""} {
+                            set ::self $tar
+                            puts $::i "NICK $tar"
+                    }
+                    }
+                    {*/quit}     {
+                        puts $::i "QUIT :$cmd $tar $rest"
+                    }
+                    default   {
+                        puts $::i "PRIVMSG $::chan :$cmd $tar $rest"
+                        dict lappend ::buffers $::chan "$::self: $cmd $tar $rest"
+                        event generate . <<Reload>>
+                    }
+                }
+        }
+            
+        proc process fd {
+            if {[eof $fd]} {
+                close $fd
+                puts "Remote host closed connection."
+                exit 1
+            }
+            set message [gets $fd]
+            if {$message eq ""} {return}
+            set sender ""
+            set rest ""
+            switch -glob $message {
+                :* {lassign [splitonfirst [string trim $message :] " "] sender rest}
+                default { set rest $message }
+            }
+            # Remnant of development.
+            # If you'd like to learn more about the IRC protocol,
+            # `irc.log` will contain a file with the raw (recieved) protocol text.
+            # You can also, as you're likely aware, telnet(1) into any IRC server.
+
+            #set f [open "irc.log" a]
+            #puts $f "message: $message"
+            #close $f
+
+            set sender [regsub {!.*} $sender ""]
+
+            set words {}
+            set word ""
+            set i 0
+            set char ""
+            while {$i < [string length $rest]} {
+                set char [string index $rest $i]
+                switch $char {
+                    {:}     {break}
+                    { }     {lappend words $word;set word ""}
+                    default {append word $char}
+                }
+                incr i
+            }
+
+            lappend words $word
+            set words [join $words]
+            set channel "$sender"
+    
+            if {[lindex $words 2] eq "="} {
+                set channel [lindex $words 3]
+            }
+            if {[string match {#*} [lindex $words 1]]} {
+                set channel [lindex $words 1]
+            }
+            if {[string match {#*} [lindex $words 2]]} {
+                set channel [lindex $words 2]
+            }
+            set content [string range $rest $i+1 end]
+    
+
+            if {[string match "\001*\001" $content]} {
+                lset words 0 ACTION 
+                set content [regsub -all {(\001ACTION |\001)} $content ""]
+            }
+
+            switch [lindex $words 0] {
+                PING     {puts $fd "PONG [lindex $words 1]"}
+                PRIVMSG  {
+                    #puts "to $channel, $sender says: $content"
+                    dict lappend ::buffers $channel "$sender: $content"
+                }
+                QUIT     {
+                    #puts "$sender has quit"
+                }
+                PART     {
+                    #puts "$sender has left $channel"
+                    dict lappend ::buffers $channel "< $sender left $channel"
+                }
+                JOIN     {
+                    #puts "$sender has joined $channel"
+                    dict lappend ::buffers $channel "> $sender joined $channel"
+                }
+                NICK     {
+                    #puts "$sender has become $content"
+                    dict lappend ::buffers $channel "$sender is now $content"
+                }
+                ACTION   {
+                    #puts "* $sender $content"
+                    dict lappend ::buffers $channel "* $sender $content"
+                }
+                default  {
+                    #puts "$sender:$channel -- $content"
+                    dict lappend ::buffers $channel "$sender -- $content"
+                }
+            }
+            event generate . <<Reload>>
+        }
+        fconfigure $::i -blocking 0 -buffering line 
+        puts $::i "NICK $self"
+        puts $::i "USER $self - - : machine"
+        puts $::i {PASS}
+        ijoin $::chan
+        fileevent $::i readable [list process $i]
+
+        vwait forever
+
+    }
+}
