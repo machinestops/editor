@@ -14,6 +14,7 @@ set textconfig {
     -padx 4 -pady 4
     -undo true
     -width 80
+    -wrap word
 }
 
 font create f -family Fixed -size 12
@@ -93,6 +94,11 @@ bind .body <Prior> {
 bind .body <Next> {
     .body see end
     .body mark set insert end
+}
+
+bind . <ButtonRelease-2> {
+    %W insert insert [selection get -selection PRIMARY]
+    break
 }
 
 # We bind these functions for convenience.
