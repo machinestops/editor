@@ -6,6 +6,10 @@
 # as it will eat into the space of the input box.
 
 set stat empty
+set find ""
+set findpos 0.0
+set findoffset 0
+set newpos ""
 
 set textconfig {
     -font f -relief solid -bd 1
@@ -71,6 +75,7 @@ bind . <Control-k> {
 # Why?
 bind . <Control-v> {
     catch {%W delete {*}[%W tag range sel]}
+    %W tag remove sel 1.0 end
 }
 
 # I like the Windows keybinds.
@@ -81,6 +86,26 @@ bind . <Control-a> {
 
 bind . <Control-z> {
     catch {%W edit undo}
+}
+
+bind . <Control-f> {
+    if {[set sel [%W tag ranges sel]] ne ""} {
+        set find [%W get {*}$sel]
+        set findpos [lindex $sel 1]        
+    }
+    
+    set newpos [%W search -nocase -count findoffset -- $find $findpos]
+    
+    if {$newpos eq ""} {
+        break
+        return
+    }
+    %W tag remove sel 1.0 end
+    %W tag add sel $newpos "$newpos + $findoffset chars"
+    %W mark set insert "$newpos + $findoffset chars"
+    %W see $newpos
+    
+    break
 }
 
 bind . <Control-Shift-z> {
@@ -97,7 +122,7 @@ bind .body <Next> {
 }
 
 bind . <ButtonRelease-2> {
-    %W insert insert [selection get -selection PRIMARY]
+    catch {%W insert insert [selection get -selection PRIMARY]}
     break
 }
 
@@ -110,8 +135,9 @@ proc open-file {} {
     if {[file exists [ic]]} {
         set f [open [ic] r]
         .body delete 0.0 end
-        .body insert end-1c [read $f]
+        .body insert end-1c [read -nonewline $f]
         close $f
+        .body edit reset
     } else {
         set ::stat {read error }
     }
@@ -214,7 +240,7 @@ switch -glob $argv0 {
         fileevent stdin readable {
             if {[eof stdin]} 
             {fileevent stdin readable {}} else {.body insert end [read stdin]}
-        }
+       }
 
     }
     *irc {
@@ -431,3 +457,4 @@ switch -glob $argv0 {
 
     }
 }
+

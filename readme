@@ -4,6 +4,6 @@ To use the text editor, you can provide a file to edit on the command-line, or i
 
 The program dispatches based on argv[0]. Install it in your $PATH, then create symlinks as desired. Currently, `editor` causes the program to act as a text editor, `reader` causes it to act as a read-only view of a file, and `irc` causes it to act as an IRC client. `reader` is also capable of taking input on stdin, which it will insert at the end of the file. The script `col -b {$1:--} | reader` will cause it to be a suitable pager for man(1).
 
-Other desired functionalities include search, tab-autocompletion in the input box (for files and irc buffers), some form of internet browser, and some form of terminal, to replace Xterm and prevent me from having to write an Xresources.
+Search is invoked via Control-F. It will take the currently selected text, and search for the next occurence of it. If no other occurences are found, the cursor will not move.
 
-
+Other desired functionalities include tab-autocompletion in the input box (for files and irc buffers), some form of internet browser, and some form of terminal, to replace Xterm and prevent me from having to write an Xresources.
