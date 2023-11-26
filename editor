@@ -210,6 +210,12 @@ switch -glob $argv0 {
             open-file
             set stat reading
         }
+        fconfigure stdin -blocking false
+        fileevent stdin readable {
+            if {[eof stdin]} 
+            {fileevent stdin readable {}} else {.body insert end [read stdin]}
+        }
+
     }
     *irc {
         # I don't want to write an argument parser.
